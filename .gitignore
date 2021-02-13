@@ -2,4 +2,4 @@
 .vscode
 
 .yarn
-.pnp.js
+.pnp.*

@@ -1,9 +1,23 @@
 {
   "compilerOptions": {
+    "module": "commonjs",
+    "target": "es2018",
+    "removeComments": false,
+    "declarationMap": true,
+    "declaration": true,
+    "sourceMap": true,
+    "moduleResolution": "node",
+    "noImplicitAny": false,
+    "experimentalDecorators": true,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
     "rootDir": "src",
     "outDir": "lib",
-    "module": "CommonJS",
-    "target": "ES6",
-    "declaration": true
-  }
+    "lib": [
+      "es2018"
+    ]
+  },
+  "exclude": [
+    "lib"
+  ]
 }

@@ -1,9 +1,10 @@
-import { mkdirp, pathExists, readdir, unlink, watch, writeFile, writeJSON, unlinkSync } from 'fs-extra';
+import { mkdirp, pathExists, readdir, unlink, writeFile, writeJSON, unlinkSync } from 'fs-extra';
+import chokidar from 'chokidar';
 import { first } from 'lodash';
-import { join, resolve } from 'path';
+import path, { basename, join } from 'path';
 
 async function getSingleRunDirPath(): Promise<string> {
-    const singleRunDirPath = resolve(process.env.HOME, 'single-run-dir');
+    const singleRunDirPath = path.resolve(process.env.HOME, 'single-run-dir');
     if (!(await pathExists(singleRunDirPath))) {
         await mkdirp(singleRunDirPath);
     }
@@ -27,35 +28,41 @@ async function waitQueueDispose(dirPath: string): Promise<void> {
     }
 
     process.once('exit', () => {
-        unlinkSync(join(dirPath, queueFile));
+        try {
+            unlinkSync(join(dirPath, queueFile));
+        } catch (e) { }
     });
 
     let taskTimer;
     return new Promise((resolve) => {
-        const watcher = watch(dirPath, async (event, fileName) => {
-            if (event === 'rename') {
-                const queueList = await listQueue();
-                const taskExists = await pathExists(taskFile);
-                if (fileName === 'task' && taskExists) {
-                    clearTimeout(taskTimer);
-                }
+        const watcher = chokidar.watch(dirPath);
 
-                if (taskExists) {
-                    taskTimer = setTimeout(() => {
-                        unlink(taskFile);
-                    }, 600000);
-                } else if (first(queueList) === queueFile) {
+        watcher.on('unlink', async (fileName) => {
+            const queueList = await listQueue();
+            const taskExists = await pathExists(taskFile);
+
+            if (basename(fileName) === 'task' || !taskExists) {
+                clearTimeout(taskTimer);
+
+                if (first(queueList) === queueFile) {
                     await unlink(join(dirPath, queueFile));
-                    watcher.close();
+                    await watcher.close();
                     resolve();
-                    return;
-                } else {
+                } else if (queueList.length > 0) {
                     setTimeout(() => {
-                        unlink(first(queueList)).catch((e) => {
-                            console.debug(e)
-                        });
+                        pathExists(taskFile)
+                            .then((exists) => !exists && unlink(join(dirPath, first(queueList))))
+                            .catch(() => { });
                     }, 2000);
                 }
+            }
+        });
+
+        watcher.on('add', async (fileName) => {
+            if (basename(fileName) === 'task') {
+                taskTimer = setTimeout(() => {
+                    unlink(taskFile).catch(() => { });
+                }, 10000);
             }
         });
     });
@@ -76,12 +83,8 @@ export async function queued(taskIdentifier: string) {
     process.once('exit', () => {
         try {
             unlinkSync(taskFile);
-        } catch (e) {
-            console.debug(e)
-        }
+        } catch (e) { }
     });
 
-    return () => unlink(taskFile).catch((e) => {
-        console.debug(e)
-    });
+    return () => unlink(taskFile).catch(() => { });
 }

@@ -29,6 +29,8 @@ module.exports = {
         "@typescript-eslint/no-var-requires": "off",
         "@typescript-eslint/explicit-function-return-type": ["off", {
             // "allowExpressions": false,
-        }]
+        }],
+        "no-empty": "off",
+        "@typescript-eslint/no-empty-function": "off"
     }
 }

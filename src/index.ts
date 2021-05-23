@@ -1,4 +1,4 @@
-import { mkdirp, pathExists, readdir, unlink, watch, writeFile } from 'fs-extra';
+import { mkdirp, pathExists, readdir, unlink, watch, writeFile, writeJSON, unlinkSync } from 'fs-extra';
 import { first } from 'lodash';
 import { join, resolve } from 'path';
 
@@ -26,30 +26,62 @@ async function waitQueueDispose(dirPath: string): Promise<void> {
         return files.filter((file) => file.startsWith('queue-')).sort();
     }
 
-    return new Promise((resolve) => {
-        const watcher = watch(dirPath, async (event, filePath) => {
-            console.log(event, filePath);
-            if (filePath === 'task' && event === 'rename') {
-                const queueList = await listQueue();
+    process.once('exit', () => {
+        unlinkSync(join(dirPath, queueFile));
+    });
 
-                if (first(queueList) === queueFile && !(await pathExists(taskFile))) {
+    let taskTimer;
+    return new Promise((resolve) => {
+        const watcher = watch(dirPath, async (event, fileName) => {
+            if (event === 'rename') {
+                const queueList = await listQueue();
+                const taskExists = await pathExists(taskFile);
+                if (fileName === 'task' && taskExists) {
+                    clearTimeout(taskTimer);
+                }
+
+                if (taskExists) {
+                    taskTimer = setTimeout(() => {
+                        unlink(taskFile);
+                    }, 600000);
+                } else if (first(queueList) === queueFile) {
                     await unlink(join(dirPath, queueFile));
                     watcher.close();
                     resolve();
+                    return;
+                } else {
+                    setTimeout(() => {
+                        unlink(first(queueList)).catch((e) => {
+                            console.debug(e)
+                        });
+                    }, 2000);
                 }
             }
         });
     });
 }
 
-export async function queued() {
+export async function queued(taskIdentifier: string) {
     const singleRunDirPath = await getSingleRunDirPath();
 
     const taskFile = join(singleRunDirPath, 'task');
 
     await waitQueueDispose(singleRunDirPath);
 
-    await writeFile(taskFile, '');
+    await writeJSON(taskFile, {
+        identifier: taskIdentifier,
+        startAt: Date.now()
+    });
 
-    return () => unlink(taskFile);
+    process.once('exit', () => {
+        try {
+            unlinkSync(taskFile);
+        } catch (e) {
+            console.debug(e)
+        }
+    });
+
+    return () => unlink(taskFile).catch((e) => {
+        console.debug(e)
+    });
 }
